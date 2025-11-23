@@ -1,50 +1,52 @@
-# ページクローラー
+# Page Crawler / ページクローラー
 
+A script that crawls all pages from the top page of a specified domain and outputs URL, title, and description to a CSV file.
 指定ドメインのトップページから配下の全ページをクロールして、URL、タイトル、ディスクリプションをCSVファイルに出力するスクリプトです。
 
-## セットアップ
+## Setup / セットアップ
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 使い方
+## Usage / 使い方
 
-### 基本的な使い方
+### Basic Usage / 基本的な使い方
 
 ```bash
 python crawl_pages.py https://example.com
 ```
 
-### オプション
+### Options / オプション
 
-- `-o, --output`: 出力CSVファイル名を指定（指定しない場合はドメイン名から自動生成。例: `https://example.com` → `example.com.csv`）
-- `-d, --delay`: リクエスト間の待機時間を秒で指定（デフォルト: 1.0秒）
+- `-o, --output`: Specify output CSV filename (auto-generated from domain if not specified, e.g., `https://example.com` → `example.com.csv`) / 出力CSVファイル名を指定（指定しない場合はドメイン名から自動生成。例: `https://example.com` → `example.com.csv`）
+- `-d, --delay`: Specify delay between requests in seconds (default: 1.0 seconds) / リクエスト間の待機時間を秒で指定（デフォルト: 1.0秒）
 
-### 例
+### Examples / 例
 
 ```bash
-# 基本的な実行（example.com.csvが自動生成されます）
+# Basic execution (example.com.csv is auto-generated) / 基本的な実行（example.com.csvが自動生成されます）
 python crawl_pages.py https://example.com
 
-# 出力ファイル名を指定
+# Specify output filename / 出力ファイル名を指定
 python crawl_pages.py https://example.com -o output.csv
 
-# 待機時間を短く設定（サーバーに負荷をかけないよう注意）
+# Set shorter delay (be careful not to overload the server) / 待機時間を短く設定（サーバーに負荷をかけないよう注意）
 python crawl_pages.py https://example.com -d 0.5
 ```
 
-## 出力形式
+## Output Format / 出力形式
 
+The CSV file contains the following 3 columns:
 CSVファイルには以下の3列が含まれます：
 
-- `url`: ページのURL
-- `title`: ページのタイトル（`<title>`タグ）
-- `description`: ページのディスクリプション（`<meta name="description">`または`<meta property="og:description">`）
+- `url`: Page URL / ページのURL
+- `title`: Page title (`<title>` tag) / ページのタイトル（`<title>`タグ）
+- `description`: Page description (`<meta name="description">` or `<meta property="og:description">`) / ページのディスクリプション（`<meta name="description">`または`<meta property="og:description">`）
 
-## 注意事項
+## Notes / 注意事項
 
-- 同じドメイン内のページのみをクロールします
-- リクエスト間にはデフォルトで1秒の待機時間があります（サーバーへの負荷を軽減）
-- 大量のページがあるサイトの場合、実行に時間がかかる場合があります
+- Only crawls pages within the same domain / 同じドメイン内のページのみをクロールします
+- There is a default 1-second delay between requests (to reduce server load) / リクエスト間にはデフォルトで1秒の待機時間があります（サーバーへの負荷を軽減）
+- For sites with many pages, execution may take time / 大量のページがあるサイトの場合、実行に時間がかかる場合があります
 
