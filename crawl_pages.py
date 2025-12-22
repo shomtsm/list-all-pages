@@ -12,6 +12,7 @@ import time
 import argparse
 from collections import deque
 import sys
+import signal
 
 
 class PageCrawler:
@@ -137,12 +138,16 @@ class PageCrawler:
     
     def save_to_csv(self):
         """Save results to CSV file / 結果をCSVファイルに保存"""
+        if not self.results:
+            print("No results to save / 保存する結果がありません")
+            return
+
         with open(self.output_file, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.DictWriter(f, fieldnames=['url', 'title', 'description'])
             writer.writeheader()
             writer.writerows(self.results)
-        
-        print(f"Saved to CSV file / CSVファイルに保存しました: {self.output_file}")
+
+        print(f"Saved {len(self.results)} pages to CSV file / {len(self.results)}ページをCSVファイルに保存しました: {self.output_file}")
 
 
 def get_domain_filename(domain_url):
@@ -171,20 +176,36 @@ def main():
         default=1.0,
         help='Delay between requests in seconds (default: 1.0) / リクエスト間の待機時間（秒）（デフォルト: 1.0）'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Check domain format / ドメインの形式チェック
     if not args.domain.startswith(('http://', 'https://')):
         print("Error: Domain must start with http:// or https:// / エラー: ドメインは http:// または https:// で始まる必要があります")
         sys.exit(1)
-    
+
     # Generate filename from domain if not specified / 出力ファイル名が指定されていない場合はドメイン名から生成
     output_file = args.output if args.output else get_domain_filename(args.domain)
-    
+
     crawler = PageCrawler(args.domain, output_file, args.delay)
-    crawler.crawl()
-    crawler.save_to_csv()
+
+    # Set up signal handler to save results on interrupt / 中断時に結果を保存するシグナルハンドラーを設定
+    def signal_handler(signum, frame):
+        print("\n" + "-" * 50)
+        print("Interrupted! Saving partial results... / 中断されました！途中結果を保存します...")
+        crawler.save_to_csv()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        crawler.crawl()
+    except Exception as e:
+        print(f"\nUnexpected error occurred / 予期しないエラーが発生しました: {e}")
+        print("Saving partial results... / 途中結果を保存します...")
+    finally:
+        crawler.save_to_csv()
 
 
 if __name__ == '__main__':
