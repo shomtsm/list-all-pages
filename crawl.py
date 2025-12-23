@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-A script to crawl all pages of a specified domain and output URL, title, and description to CSV
-指定ドメインの全ページをクロールして、URL、タイトル、ディスクリプションをCSVに出力するスクリプト
+A lightweight script to crawl all pages of a specified domain and output URL, title, and description to CSV
+指定ドメインの全ページをクロールして、URL、タイトル、ディスクリプションをCSVに出力する軽量スクリプト
+
+Uses requests + BeautifulSoup for fast crawling of standard websites
+requests + BeautifulSoupを使用した高速クロール（通常のウェブサイト向け）
+
+For SPA (Single Page Application) sites, use crawl_pages_spa.py instead
+SPA（シングルページアプリケーション）サイトには crawl_pages_spa.py を使用してください
 """
 
-import requests
-from bs4 import BeautifulSoup
 import csv
 from urllib.parse import urljoin, urlparse
 import time
@@ -13,10 +17,20 @@ import argparse
 from collections import deque
 import sys
 import signal
+from datetime import datetime
+
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("Error: Required packages are not installed / エラー: 必要なパッケージがインストールされていません")
+    print("Please run: pip install requests beautifulsoup4")
+    print("実行してください: pip install requests beautifulsoup4")
+    sys.exit(1)
 
 
 class PageCrawler:
-    def __init__(self, domain, output_file='pages.csv', delay=1.0):
+    def __init__(self, domain, output_file='pages.csv', delay=0.5):
         """
         Args:
             domain: Domain to crawl (e.g., https://example.com) / クロール対象のドメイン（例: https://example.com）
@@ -31,9 +45,10 @@ class PageCrawler:
         self.results = []
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
-        
+        self.interrupted = False
+
     def is_same_domain(self, url):
         """Check if URL belongs to the same domain / URLが同じドメインかどうかをチェック"""
         try:
@@ -42,7 +57,7 @@ class PageCrawler:
             return parsed.netloc == domain_parsed.netloc
         except:
             return False
-    
+
     def normalize_url(self, url):
         """Normalize URL (remove fragments, etc.) / URLを正規化（フラグメントを削除など）"""
         parsed = urlparse(url)
@@ -50,92 +65,123 @@ class PageCrawler:
         if parsed.query:
             normalized += f"?{parsed.query}"
         return normalized.rstrip('/') or self.domain
-    
-    def extract_page_info(self, url, html_content):
-        """Extract title and description from HTML / HTMLからタイトルとディスクリプションを抽出"""
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
+
+    def is_valid_page_url(self, url):
+        """Check if URL is a valid page URL (not a file download, etc.) / URLが有効なページURLかチェック"""
+        skip_extensions = (
+            '.pdf', '.zip', '.tar', '.gz', '.rar',
+            '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico',
+            '.mp3', '.mp4', '.avi', '.mov', '.wmv',
+            '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+            '.css', '.js', '.json', '.xml'
+        )
+        parsed = urlparse(url)
+        path_lower = parsed.path.lower()
+        return not path_lower.endswith(skip_extensions)
+
+    def extract_page_info(self, soup):
+        """Extract title and description from BeautifulSoup object / BeautifulSoupオブジェクトからタイトルとディスクリプションを抽出"""
         # Extract title / タイトルの取得
-        title_tag = soup.find('title')
-        title = title_tag.get_text(strip=True) if title_tag else ''
-        
+        title = ''
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+
         # Extract description (meta description) / ディスクリプションの取得（meta description）
+        description = ''
         meta_desc = soup.find('meta', attrs={'name': 'description'})
         if not meta_desc:
             meta_desc = soup.find('meta', attrs={'property': 'og:description'})
-        
-        description = ''
-        if meta_desc:
-            description = meta_desc.get('content', '') or meta_desc.get('value', '')
-            description = description.strip()
-        
+        if meta_desc and meta_desc.get('content'):
+            description = meta_desc['content'].strip()
+
         return title, description
-    
+
+    def extract_links(self, soup, base_url):
+        """Extract all links from BeautifulSoup object / BeautifulSoupオブジェクトから全てのリンクを抽出"""
+        links = []
+        for anchor in soup.find_all('a', href=True):
+            href = anchor['href']
+            # Convert to absolute URL / 絶対URLに変換
+            absolute_url = urljoin(base_url, href)
+            links.append(absolute_url)
+        return links
+
     def crawl(self):
         """Main crawling process / メインのクロール処理"""
-        print(f"Crawling started / クロール開始: {self.domain}")
+        print(f"Crawling started (Simple mode) / クロール開始（シンプルモード）: {self.domain}")
         print(f"Output file / 出力ファイル: {self.output_file}")
         print("-" * 50)
-        
-        while self.to_visit:
+
+        while self.to_visit and not self.interrupted:
             url = self.to_visit.popleft()
             normalized_url = self.normalize_url(url)
-            
+
             # Skip if already visited / 既に訪問済みの場合はスキップ
             if normalized_url in self.visited:
                 continue
-            
+
             # Skip if not same domain / 同じドメインでない場合はスキップ
             if not self.is_same_domain(normalized_url):
                 continue
-            
+
+            # Skip if not a valid page URL / 有効なページURLでない場合はスキップ
+            if not self.is_valid_page_url(normalized_url):
+                continue
+
             self.visited.add(normalized_url)
-            
+
             try:
                 print(f"Fetching / 取得中: {normalized_url}")
                 response = self.session.get(normalized_url, timeout=10)
                 response.raise_for_status()
-                
-                # Get HTML content / HTMLコンテンツの取得
-                html_content = response.text
-                
+
+                # Check if response is HTML / レスポンスがHTMLかチェック
+                content_type = response.headers.get('Content-Type', '')
+                if 'text/html' not in content_type:
+                    print(f"  - Skipped (not HTML) / スキップ（HTML以外）")
+                    continue
+
+                soup = BeautifulSoup(response.text, 'html.parser')
+
                 # Extract title and description / タイトルとディスクリプションの抽出
-                title, description = self.extract_page_info(normalized_url, html_content)
-                
+                title, description = self.extract_page_info(soup)
+
                 # Add to results / 結果に追加
                 self.results.append({
                     'url': normalized_url,
                     'title': title,
                     'description': description
                 })
-                
-                print(f"  ✓ Title / タイトル: {title[:50]}...")
-                
+
+                title_display = title[:50] + '...' if len(title) > 50 else title
+                print(f"  ✓ Title / タイトル: {title_display}")
+
                 # Extract links and add to queue / リンクを抽出してキューに追加
-                soup = BeautifulSoup(html_content, 'html.parser')
-                for link in soup.find_all('a', href=True):
-                    href = link['href']
-                    absolute_url = urljoin(normalized_url, href)
-                    normalized_link = self.normalize_url(absolute_url)
-                    
-                    if (self.is_same_domain(normalized_link) and 
-                        normalized_link not in self.visited and 
+                links = self.extract_links(soup, normalized_url)
+                for link in links:
+                    normalized_link = self.normalize_url(link)
+                    if (self.is_same_domain(normalized_link) and
+                        self.is_valid_page_url(normalized_link) and
+                        normalized_link not in self.visited and
                         normalized_link not in self.to_visit):
-                        self.to_visit.append(absolute_url)
-                
+                        self.to_visit.append(normalized_link)
+
                 # Delay between requests / リクエスト間の待機時間
                 time.sleep(self.delay)
-                
-            except requests.exceptions.RequestException as e:
+
+            except requests.Timeout:
+                print(f"  ✗ Timeout / タイムアウト")
+                continue
+            except requests.RequestException as e:
                 print(f"  ✗ Error / エラー: {e}")
                 continue
             except Exception as e:
-                print(f"  ✗ Unexpected error / 予期しないエラー: {e}")
+                print(f"  ✗ Error / エラー: {e}")
                 continue
-        
+
         print("-" * 50)
         print(f"Crawling completed / クロール完了: {len(self.results)} pages fetched / ページを取得")
-    
+
     def save_to_csv(self):
         """Save results to CSV file / 結果をCSVファイルに保存"""
         if not self.results:
@@ -151,15 +197,16 @@ class PageCrawler:
 
 
 def get_domain_filename(domain_url):
-    """Extract domain name from URL and generate CSV filename / URLからドメイン名を抽出してCSVファイル名を生成"""
+    """Extract domain name from URL and generate CSV filename with timestamp / URLからドメイン名を抽出してタイムスタンプ付きCSVファイル名を生成"""
     parsed = urlparse(domain_url)
     domain_name = parsed.netloc
-    return f"{domain_name}.csv"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    return f"{domain_name}_{timestamp}.csv"
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Crawl all pages of specified domain and output to CSV / 指定ドメインの全ページをクロールしてCSVに出力'
+        description='Crawl all pages of specified domain and output to CSV (Lightweight mode) / 指定ドメインの全ページをクロールしてCSVに出力（軽量モード）'
     )
     parser.add_argument(
         'domain',
@@ -173,8 +220,8 @@ def main():
     parser.add_argument(
         '-d', '--delay',
         type=float,
-        default=1.0,
-        help='Delay between requests in seconds (default: 1.0) / リクエスト間の待機時間（秒）（デフォルト: 1.0）'
+        default=0.5,
+        help='Delay between requests in seconds (default: 0.5) / リクエスト間の待機時間（秒）（デフォルト: 0.5）'
     )
 
     args = parser.parse_args()
@@ -187,12 +234,17 @@ def main():
     # Generate filename from domain if not specified / 出力ファイル名が指定されていない場合はドメイン名から生成
     output_file = args.output if args.output else get_domain_filename(args.domain)
 
-    crawler = PageCrawler(args.domain, output_file, args.delay)
+    crawler = PageCrawler(
+        args.domain,
+        output_file,
+        args.delay
+    )
 
     # Set up signal handler to save results on interrupt / 中断時に結果を保存するシグナルハンドラーを設定
     def signal_handler(signum, frame):
         print("\n" + "-" * 50)
         print("Interrupted! Saving partial results... / 中断されました！途中結果を保存します...")
+        crawler.interrupted = True
         crawler.save_to_csv()
         sys.exit(0)
 
@@ -210,4 +262,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -8,33 +8,76 @@ A script that crawls all pages from the top page of a specified domain and outpu
 pip install -r requirements.txt
 ```
 
-## Usage 
+## Two Versions Available / 2種類のスクリプト
 
-### Basic Usage
+| Script | Speed | Use Case |
+|--------|-------|----------|
+| `crawl.py` | Fast / 高速 | Standard websites / 通常のウェブサイト |
+| `spa_crawl.py` | Slow / 低速 | SPA (React, Vue, etc.) / SPA（React, Vueなど） |
+
+### Which one should I use? / どちらを使うべき？
+
+- **crawl.py (Recommended for most sites / ほとんどのサイトにおすすめ)**
+  - Uses `requests` + `BeautifulSoup`
+  - Much faster, lightweight
+  - Works for standard server-rendered HTML sites
+  - 通常のサーバーサイドレンダリングのHTMLサイト向け
+
+- **spa_crawl.py (For JavaScript-heavy sites / JavaScript多用サイト向け)**
+  - Uses `Playwright` (headless browser)
+  - Slower but renders JavaScript content
+  - Required for React, Vue, Angular, Next.js (CSR) sites
+  - JavaScript描画コンテンツに対応
+
+## Usage
+
+### Simple Mode (Fast) / シンプルモード（高速）
 
 ```bash
-python crawl_pages.py https://example.com
+source venv/bin/activate
+
+python crawl.py https://example.com
 ```
 
-### Options
-
-- `-o, --output`: Specify output CSV filename (auto-generated from domain if not specified, e.g., `https://example.com` → `example.com.csv`) <br /> 出力CSVファイル名を指定（指定しない場合はドメイン名から自動生成。例: `https://example.com` → `example.com.csv`）
-- `-d, --delay`: Specify delay between requests in seconds (default: 1.0 seconds) <br /> リクエスト間の待機時間を秒で指定（デフォルト: 1.0秒）
-
-### Examples
+### SPA Mode (For JavaScript sites) / SPAモード（JavaScriptサイト向け）
 
 ```bash
-# Basic execution (example.com.csv is auto-generated)
-# 基本的な実行（example.com.csvが自動生成されます）
-python crawl_pages.py https://example.com
+source venv/bin/activate
+
+python spa_crawl.py https://example.com
+```
+
+## Options
+
+### crawl.py
+
+- `-o, --output`: Specify output CSV filename (auto-generated from domain if not specified) <br /> 出力CSVファイル名を指定（指定しない場合はドメイン名から自動生成）
+- `-d, --delay`: Delay between requests in seconds (default: 0.5) <br /> リクエスト間の待機時間（デフォルト: 0.5秒）
+
+### spa_crawl.py
+
+- `-o, --output`: Specify output CSV filename (auto-generated from domain if not specified) <br /> 出力CSVファイル名を指定（指定しない場合はドメイン名から自動生成）
+- `-d, --delay`: Delay between requests in seconds (default: 1.0) <br /> リクエスト間の待機時間（デフォルト: 1.0秒）
+- `--no-headless`: Show browser window <br /> ブラウザウィンドウを表示
+
+## Examples
+
+```bash
+# Fast crawl for standard websites
+# 通常のウェブサイト向け高速クロール
+python crawl.py https://example.com
 
 # Specify output filename
 # 出力ファイル名を指定
-python crawl_pages.py https://example.com -o output.csv
+python crawl.py https://example.com -o output.csv
 
-# Set shorter delay (be careful not to overload the server)
-# 待機時間を短く設定（サーバーに負荷をかけないよう注意）
-python crawl_pages.py https://example.com -d 0.5
+# For SPA sites (React, Vue, etc.)
+# SPAサイト（React, Vueなど）向け
+python spa_crawl.py https://spa-site.com
+
+# SPA with visible browser (for debugging)
+# SPAでブラウザを表示（デバッグ用）
+python spa_crawl.py https://spa-site.com --no-headless
 ```
 
 ## Output Format
@@ -42,13 +85,12 @@ python crawl_pages.py https://example.com -d 0.5
 The CSV file contains the following 3 columns:<br />
 CSVファイルには以下の3列が含まれます：
 
-- `url`: Page URLL
+- `url`: Page URL
 - `title`: Page title (`<title>` tag)
 - `description`: Page description (`<meta name="description">` or `<meta property="og:description">`)
 
 ## Notes
 
 - Only crawls pages within the same domain<br />同じドメイン内のページのみをクロールします
-- There is a default 1-second delay between requests (to reduce server load)<br />リクエスト間にはデフォルトで1秒の待機時間があります（サーバーへの負荷を軽減）
+- Ctrl+C to interrupt and save partial results<br />Ctrl+Cで中断して途中結果を保存できます
 - For sites with many pages, execution may take time<br />大量のページがあるサイトの場合、実行に時間がかかる場合があります
-
